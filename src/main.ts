@@ -1,6 +1,10 @@
+import dotenv from 'dotenv';
 import { logger } from './utils/logger.js';
 import { backfillRemates } from './jobs/backfill.job.js';
 import { startCronScheduler } from './jobs/cron.job.js';
+
+// Load environment variables from .env file
+dotenv.config();
 
 const command = process.argv[2];
 const args = process.argv.slice(3);
