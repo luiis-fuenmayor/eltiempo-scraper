@@ -1,7 +1,6 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { logger } from '../utils/logger.js';
 import crypto from 'crypto';
-import ws from 'ws';
 
 interface Edicto {
   id: string;
@@ -26,14 +25,8 @@ export class DatabaseService {
       throw new Error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in environment');
     }
 
-    this.supabase = createClient(supabaseUrl, supabaseKey, {
-      realtime: {
-        params: {
-          eventsPerSecond: 10,
-        },
-      },
-    });
-    logger.debug('Supabase client initialized with WebSocket support');
+    this.supabase = createClient(supabaseUrl, supabaseKey);
+    logger.debug('Supabase client initialized');
   }
 
   async upsertEdicto(edicto: Edicto): Promise<boolean> {
