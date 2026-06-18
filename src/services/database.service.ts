@@ -1,4 +1,3 @@
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { logger } from '../utils/logger.js';
 import crypto from 'crypto';
 
@@ -15,18 +14,18 @@ interface Edicto {
 }
 
 export class DatabaseService {
-  private supabase: SupabaseClient;
+  private supabaseUrl: string;
+  private supabaseKey: string;
 
   constructor() {
-    const supabaseUrl = process.env.SUPABASE_URL;
-    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    this.supabaseUrl = process.env.SUPABASE_URL || '';
+    this.supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 
-    if (!supabaseUrl || !supabaseKey) {
+    if (!this.supabaseUrl || !this.supabaseKey) {
       throw new Error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in environment');
     }
 
-    this.supabase = createClient(supabaseUrl, supabaseKey);
-    logger.debug('Supabase client initialized');
+    logger.debug('Supabase REST client initialized');
   }
 
   async upsertEdicto(edicto: Edicto): Promise<boolean> {
@@ -34,23 +33,57 @@ export class DatabaseService {
       const now = new Date().toISOString();
       const contentHash = this.calculateHash(edicto.body);
 
-      const { error } = await this.supabase
-        .from('edictos')
-        .upsert({
-          id: edicto.id,
-          titulo: edicto.title,
-          contenido: edicto.body,
-          cliente: edicto.customer,
-          categoria: edicto.category,
-          url: edicto.url,
-          fecha_publicacion: edicto.date,
-          hash: contentHash,
-          scraped_at: now,
-          updated_at: now,
-        }, { onConflict: 'id' });
+      const response = await fetch(
+        `${this.supabaseUrl}/rest/v1/edictos?id=eq.${edicto.id}`,
+        {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${this.supabaseKey}`,
+            'apikey': this.supabaseKey,
+            'Content-Type': 'application/json',
+            'Prefer': 'return=minimal',
+          },
+          body: JSON.stringify({
+            id: edicto.id,
+            titulo: edicto.title,
+            contenido: edicto.body,
+            url: edicto.url,
+            fecha_publicacion: edicto.date,
+            hash: contentHash,
+            scraped_at: now,
+            updated_at: now,
+          }),
+        }
+      );
 
-      if (error) {
-        logger.error('Error upserting edicto', { id: edicto.id, error: error.message });
+      if (!response.ok && response.status !== 201) {
+        // If update didn't find row, insert
+        if (response.status === 200) {
+          const insertResponse = await fetch(
+            `${this.supabaseUrl}/rest/v1/edictos`,
+            {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${this.supabaseKey}`,
+                'apikey': this.supabaseKey,
+                'Content-Type': 'application/json',
+                'Prefer': 'return=minimal',
+              },
+              body: JSON.stringify({
+                id: edicto.id,
+                titulo: edicto.title,
+                contenido: edicto.body,
+                url: edicto.url,
+                fecha_publicacion: edicto.date,
+                hash: contentHash,
+                scraped_at: now,
+                updated_at: now,
+              }),
+            }
+          );
+          return insertResponse.ok;
+        }
+        logger.error('Error upserting edicto', { id: edicto.id, status: response.status });
         return false;
       }
 
@@ -73,15 +106,20 @@ export class DatabaseService {
 
   async getLatestScrapedDate(): Promise<Date | null> {
     try {
-      const { data, error } = await this.supabase
-        .from('edictos')
-        .select('fecha_publicacion')
-        .order('fecha_publicacion', { ascending: false })
-        .limit(1);
+      const response = await fetch(
+        `${this.supabaseUrl}/rest/v1/edictos?select=fecha_publicacion&order=fecha_publicacion.desc&limit=1`,
+        {
+          headers: {
+            'Authorization': `Bearer ${this.supabaseKey}`,
+            'apikey': this.supabaseKey,
+          },
+        }
+      );
 
-      if (error || !data || data.length === 0) {
-        return null;
-      }
+      if (!response.ok) return null;
+
+      const data = await response.json() as Array<{ fecha_publicacion: string }>;
+      if (!data || data.length === 0) return null;
 
       return new Date(data[0].fecha_publicacion);
     } catch (err) {
@@ -92,15 +130,23 @@ export class DatabaseService {
 
   async countTotal(): Promise<number> {
     try {
-      const { count, error } = await this.supabase
-        .from('edictos')
-        .select('*', { count: 'exact', head: true });
+      const response = await fetch(
+        `${this.supabaseUrl}/rest/v1/edictos?select=count&head=true`,
+        {
+          headers: {
+            'Authorization': `Bearer ${this.supabaseKey}`,
+            'apikey': this.supabaseKey,
+            'Prefer': 'count=exact',
+          },
+        }
+      );
 
-      if (error || count === null) {
-        return 0;
-      }
+      if (!response.ok) return 0;
 
-      return count;
+      const count = response.headers.get('content-range');
+      if (!count) return 0;
+
+      return parseInt(count.split('/')[1], 10) || 0;
     } catch (err) {
       logger.error('Error counting edictos', { error: String(err) });
       return 0;
