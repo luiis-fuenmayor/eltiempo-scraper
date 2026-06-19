@@ -29,6 +29,12 @@ export class DatabaseService {
   }
 
   async upsertEdicto(edicto: Edicto): Promise<boolean> {
+    // Filter: only save if it's a remate (judicial sale)
+    if (!this.isRemate(edicto)) {
+      logger.debug(`Skipping non-remate: ${edicto.title}`);
+      return false;
+    }
+
     try {
       const now = new Date().toISOString();
       const contentHash = this.calculateHash(edicto.body);
@@ -92,6 +98,12 @@ export class DatabaseService {
       logger.error('Error upserting edicto', { id: edicto.id, error: String(err) });
       return false;
     }
+  }
+
+  private isRemate(edicto: Edicto): boolean {
+    const remateKeywords = ['remate', 'subasta', 'embargo', 'bien inmueble', 'avalúo', 'puja'];
+    const text = `${edicto.title} ${edicto.body}`.toLowerCase();
+    return remateKeywords.some(keyword => text.includes(keyword));
   }
 
   async upsertBatch(edictos: Edicto[]): Promise<number> {
