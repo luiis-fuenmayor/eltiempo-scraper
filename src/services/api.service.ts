@@ -77,7 +77,8 @@ export class ApiService {
     while (hasMore && page <= CONSTANTS.MAX_PAGES) {
       const response = await this.fetchPage(page, {
         date_from: dateFrom,
-        date_to: dateTo
+        date_to: dateTo,
+        search: 'remate' // Filter for judicial sales only
       });
 
       if (!response) {
@@ -112,7 +113,8 @@ export class ApiService {
 
     const response = await this.fetchPage(1, {
       date_from: this.formatDate(startDate),
-      date_to: this.formatDate(endDate)
+      date_to: this.formatDate(endDate),
+      search: 'remate' // Filter for judicial sales only
     });
 
     if (!response) {
